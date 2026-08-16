@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CivicPulse - AI Municipal Grievance Redressal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS for Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+
+  <!-- Header -->
+  <header class="bg-indigo-700 text-white p-4 shadow-md flex justify-between items-center">
+    <h1 class="text-xl font-bold flex items-center gap-2">
+      🏛️ CivicPulse <span class="text-xs bg-indigo-500 px-2 py-1 rounded-full uppercase">Hackathon MVP</span>
+    </h1>
+    <span class="text-sm">Smart City AI Redressal Platform</span>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4">
+
+    <!-- Left Column: Citizen Reporting Module -->
+    <div class="lg:col-span-5 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+      <h2 class="text-lg font-bold text-indigo-900 mb-1">Report a Civic Issue</h2>
+      <p class="text-sm text-slate-500 mb-4">Snap a photo. AI will automatically categorize, assess severity, and route your complaint.</p>
+
+      <form id="grievanceForm" class="space-y-4">
+        <!-- Image Input -->
+        <div>
+          <label class="block text-sm font-medium mb-1">Upload Issue Photo</label>
+          <input type="file" id="photoInput" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border rounded-lg cursor-pointer" required />
+        </div>
+
+        <!-- Coordinates (Simulated or Auto-detected) -->
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs text-slate-500">Latitude</label>
+            <input type="text" id="lat" value="22.7196" class="w-full p-2 border rounded bg-slate-50 text-xs" readonly />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500">Longitude</label>
+            <input type="text" id="lng" value="75.8577" class="w-full p-2 border rounded bg-slate-50 text-xs" readonly />
+          </div>
+        </div>
+
+        <button type="submit" id="submitBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center gap-2">
+          <span>Analyze & Submit Ticket</span>
+        </button>
+      </form>
+
+      <!-- AI Analysis Result Card (Hidden by default) -->
+      <div id="aiResult" class="hidden mt-6 p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+        <div class="flex justify-between items-center">
+          <span id="resCategory" class="font-bold text-sm px-2.5 py-1 rounded bg-indigo-100 text-indigo-800">Category</span>
+          <span id="resPriority" class="text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-700">Priority</span>
+        </div>
+        <p id="resDescription" class="text-xs text-slate-600 mt-1"></p>
+        <div class="text-xs text-slate-500 pt-2 border-t flex justify-between">
+          <span>Assigned: <strong id="resDept">Dept</strong></span>
+          <span>EST: <strong id="resSLA">48 Hours</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Municipal Admin Heatmap & Dashboard -->
+    <div class="lg:col-span-7 bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Municipal Admin View</h2>
+          <p class="text-xs text-slate-500">Real-time geotagged tickets & issue density</p>
+        </div>
+        <span class="text-xs font-semibold bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full">Live Map Active</span>
+      </div>
+
+      <!-- Map Container -->
+      <div id="map" class="w-full h-[400px] rounded-lg border border-slate-200 z-0"></div>
+    </div>
+
+  </main>
+
+  <script>
+    // Initialize Leaflet Map
+    const initialLat = 22.7196;
+    const initialLng = 75.8577;
+    const map = L.map('map').setView([initialLat, initialLng], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Auto-get Geolocation if available
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        document.getElementById('lat').value = pos.coords.latitude.toFixed(4);
+        document.getElementById('lng').value = pos.coords.longitude.toFixed(4);
+        map.setView([pos.coords.latitude, pos.coords.longitude], 14);
+      });
+    }
+
+    // Form Submission Handler
+    document.getElementById('grievanceForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.innerText = 'AI Processing...';
+      submitBtn.disabled = true;
+
+      const fileInput = document.getElementById('photoInput');
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('lat', document.getElementById('lat').value);
+      formData.append('lng', document.getElementById('lng').value);
+
+      try {
+        const response = await fetch('http://localhost:3000/api/report', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+
+        // Render AI Analysis Output
+        document.getElementById('resCategory').innerText = data.category;
+        document.getElementById('resPriority').innerText = `Priority: ${data.priority}`;
+        document.getElementById('resDescription').innerText = data.description;
+        document.getElementById('resDept').innerText = data.department;
+        document.getElementById('resSLA').innerText = data.estimatedResolutionTime;
+        document.getElementById('aiResult').classList.remove('hidden');
+
+        // Add Marker to Admin Map
+        const marker = L.marker([data.lat, data.lng]).addTo(map);
+        marker.bindPopup(`
+          <strong style="color: #4338ca;">${data.category}</strong><br>
+          <small>${data.description}</small><br>
+          <span style="font-size: 10px; color: #dc2626;">Priority: ${data.priority}</span>
+        `).openPopup();
+
+      } catch (err) {
+        alert('Server connection error. Make sure node backend is running.');
+      } finally {
+        submitBtn.innerText = 'Analyze & Submit Ticket';
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
